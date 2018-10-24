@@ -1,0 +1,131 @@
+package com.xiaoyuer.soa.core.config;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.util.Properties;
+
+import javax.sql.DataSource;
+
+import org.apache.ibatis.plugin.Interceptor;
+import org.apache.ibatis.session.SqlSessionFactory;
+import org.mybatis.spring.SqlSessionFactoryBean;
+import org.mybatis.spring.SqlSessionTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.io.support.ResourcePatternResolver;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.annotation.TransactionManagementConfigurer;
+
+import com.alibaba.druid.pool.DruidDataSource;
+
+/**
+ * MyBatis基础配置
+ *
+ * @author liangjixun
+ * @since 2016-11-21
+ */
+@Configuration
+@EnableTransactionManagement(proxyTargetClass=true)
+public class MySqlSessionFactoryBean implements TransactionManagementConfigurer{
+	
+	private Logger logger = LoggerFactory.getLogger(MySqlSessionFactoryBean.class);
+	
+    @Autowired
+    DataSource dataSource;
+	
+    //数据库配置
+    @Bean
+    public DataSource dataSource(){
+    	logger.info("----------数据库配置开始----------");
+
+    	//获取数据库配置文件目录
+    	String path = System.getProperty("user.dir").replace("\\", "/");//获取当前应用所在目录
+    	path = path.substring(0, path.lastIndexOf("/"));
+    	path = path + "/conf/xye-datasource.properties";
+    	logger.info("datasource-path:{}",path);
+    	
+    	Properties properties = new Properties();
+    	try {
+    		BufferedReader bufferedReader = new BufferedReader(new FileReader(path));
+    		properties.load(bufferedReader);
+    	} catch (IOException e) {
+    		e.printStackTrace();
+    	}
+    	String driverClassName = properties.getProperty("xye.datasource.driver-class-name");
+    	String url = properties.getProperty("xye.datasource.url");
+    	String userName = properties.getProperty("xye.datasource.username");
+    	String password = properties.getProperty("xye.datasource.password");
+    	
+//    	logger.info("driverClassName = {}",driverClassName);
+//    	logger.info("url = {}",url);
+//    	logger.info("userName = {}",userName);
+//    	logger.info("password = {}",password);
+    	
+    	DruidDataSource dataSource = new DruidDataSource();
+    	dataSource.setDriverClassName(driverClassName);
+    	dataSource.setUrl(url);
+    	dataSource.setUsername(userName);
+    	dataSource.setPassword(password);
+    	
+    	logger.info("----------数据库配置结束----------");
+    	
+    	return dataSource;
+    }
+    
+    @Bean(name = "sqlSessionFactory")
+    public SqlSessionFactory sqlSessionFactoryBean() {
+        SqlSessionFactoryBean bean = new SqlSessionFactoryBean();
+        bean.setDataSource(dataSource);
+        bean.setTypeAliasesPackage("com.xiaoyuer.core.**.dmo");
+
+        //分页插件
+        PagePluginSoa pageHelper = new PagePluginSoa();
+        Properties properties = new Properties();
+        properties.setProperty("dialect", "mysql");
+        properties.setProperty("pageSqlId", ".*ListPage.*");
+        pageHelper.setProperties(properties);
+
+        //添加插件
+        bean.setPlugins(new Interceptor[]{pageHelper});
+        
+        //添加XML目录
+        ResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+        try {
+            bean.setMapperLocations(resolver.getResources("classpath*:com/xiaoyuer/core/**/mapping/*Mapper.xml"));
+            return bean.getObject();
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException(e);
+        }
+    }
+    
+    @Bean
+    public SqlSessionTemplate sqlSessionTemplate(SqlSessionFactory sqlSessionFactory) {
+        return new SqlSessionTemplate(sqlSessionFactory);
+    }
+
+    
+    @Bean
+    @Override
+    public PlatformTransactionManager annotationDrivenTransactionManager() {
+        return new DataSourceTransactionManager(dataSource);
+    }
+    
+//	@Bean(destroyMethod="")
+//	public DataSource jndiDataSource() throws IllegalArgumentException, NamingException {
+//		JndiObjectFactoryBean bean = new JndiObjectFactoryBean();
+//		bean.setJndiName("java:comp/env/jdbc/xye-soa");
+//		bean.setProxyInterface(DataSource.class);
+//		bean.setLookupOnStartup(false);
+//		bean.afterPropertiesSet();
+//		return (DataSource)bean.getObject();
+//	}
+    
+}
